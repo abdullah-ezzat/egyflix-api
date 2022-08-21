@@ -28,7 +28,7 @@ class Egyflix:
         soup = soup.select('.MovieBlock')
         for s in soup:
             name = s.select_one('.BlockName h4').getText().split(
-                ' ', 1)[1].rsplit(' ', 1)[0]
+                ' ', 1)[1]
             category = s.select_one('.category').getText()
             image = s.select_one('.Poster img').get('data-src')
             link = s.select_one('a').get('href')
@@ -226,7 +226,7 @@ class Search:
         block = soup.select('.MovieBlock')
         for s in block:
             name = s.select_one('.BlockName h4').getText().split(
-                ' ', 1)[1].rsplit(' ', 1)[0]
+                ' ', 1)[1]
             category = s.select_one('.category').getText()
             image = s.select_one('.Poster img').get('data-src')
             link = s.select_one('a').get('href')
