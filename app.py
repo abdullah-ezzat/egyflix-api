@@ -51,18 +51,18 @@ class Egyflix:
     @app.route('/search/details/<search>', methods=["GET", "POST"])
     def search_data(search):
         result = {}
-
-        url = '{}/find/?find={}'.format(BASEURL, search)
-        soup = Egyflix.request(url)
-
-        soup = BeautifulSoup(soup.text, 'html.parser')
-        soup = soup.select_one('.MovieBlock')
-
-        link = soup.select_one('a').get('href')
         if request.data:
             post = json.loads(request.data)
             if post['link'] != None:
                 link = post['link']
+        else:
+            url = '{}/find/?find={}'.format(BASEURL, search)
+            soup = Egyflix.request(url)
+
+            soup = BeautifulSoup(soup.text, 'html.parser')
+            soup = soup.select_one('.MovieBlock')
+
+            link = soup.select_one('a').get('href')
 
         detailsSoup = Egyflix.request(link)
         detailsSoup = BeautifulSoup(detailsSoup.text, 'html.parser')
