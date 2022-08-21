@@ -20,6 +20,8 @@ class Egyflix:
     @app.route('/get/<action>/page=<int:page>')
     def get_data(action, page):
         result = []
+        action = action.replace('-', '/')
+        action = action.replace('>', '-')
 
         url = '{}/category/{}/?page={}'.format(BASEURL, action, page)
         soup = Egyflix.request(url)
