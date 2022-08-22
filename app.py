@@ -177,7 +177,7 @@ class Egyflix:
         return {'watch': watch, 'play': play}
 
     # request url using scraper api
-    def request(link, status='local'):
+    def request(link, status='host'):
         if status == 'host':
             payload = {
                 'api_key': 'fd37ca458851abfd1350b898184bce77', 'url': link}
