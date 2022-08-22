@@ -3,7 +3,6 @@ from js2py import eval_js as executeJS
 from bs4 import BeautifulSoup
 from flask import Flask, request
 import requests
-import urllib
 import json
 import re
 
@@ -24,9 +23,10 @@ class Egyflix:
 
         for n in range(pages):
             action = action.replace('-', '/')
-            url = "{}/{}/?page={}".format(BASEURL, action, n + 1)
+            url = "{}/{}?output_format=json".format(BASEURL, action)
             response = Egyflix.request(url)
-            soup = BeautifulSoup(response.text, "html.parser")
+            response = json.loads(response.text)
+            soup = BeautifulSoup(response['html'], "html.parser")
 
             movies = soup.select(".movie")
             for movie in movies:
@@ -185,7 +185,7 @@ class Egyflix:
                 'http://api.scraperapi.com', params=payload)
 
         if status == 'local':
-            response = requests.get(link, proxies=urllib.request.getproxies())
+            response = requests.get(link)
 
         return response
 
@@ -317,4 +317,4 @@ class Search:
 
 
 if __name__ == '__main__':
-    app.run()
+    app.run(host='0.0.0.0')
