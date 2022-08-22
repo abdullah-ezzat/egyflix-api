@@ -1,13 +1,14 @@
-from urllib.parse import unquote
-from flask import Flask, request
-from selenium import webdriver
+from base64 import urlsafe_b64decode as decode
+from js2py import eval_js as executeJS
 from bs4 import BeautifulSoup
+from flask import Flask, request
 import requests
+import urllib
 import json
-import os
+import re
 
 app = Flask(__name__)
-BASEURL = 'https://m.arabseed.sbs'
+BASEURL = "http://www.egy.best"
 
 
 @app.route('/')
@@ -16,99 +17,132 @@ def index():
 
 
 class Egyflix:
-    # get movies, series list
-    @app.route('/get/<action>/page=<int:page>')
-    def get_data(action, page):
+    # get movies, series, animes list
+    @app.route('/get/<action>/pages=<int:pages>')
+    def get_data(action, pages):
         result = []
-        action = action.replace('-', '/')
-        action = action.replace('>', '-')
 
-        url = '{}/category/{}/?page={}'.format(BASEURL, action, page)
-        soup = Egyflix.request(url)
+        for n in range(pages):
+            action = action.replace('-', '/')
+            url = "{}/{}/?page={}".format(BASEURL, action, n + 1)
+            response = Egyflix.request(url)
+            soup = BeautifulSoup(response.text, "html.parser")
 
-        soup = BeautifulSoup(soup.text, 'html.parser')
-        soup = soup.select('.MovieBlock')
-        for s in soup:
-            name = s.select_one('.BlockName h4').getText().split(
-                ' ', 1)[1]
-            category = s.select_one('.category').getText()
-            image = s.select_one('.Poster img').get('data-src')
-            link = s.select_one('a').get('href')
-            rating = s.select_one('.RateNumber')
-            quality = s.select_one('.Ribbon')
+            movies = soup.select(".movie")
+            for movie in movies:
+                movieRef = movie.get("href", 0)
+                movieName = movie.select_one(".title").getText()
+                movieQuality = movie.select_one('.ribbon')
+                movieImg = movie.select_one('img').get('src')
+                movieRating = movie.select_one('.rating')
+                if movieRating and movieQuality != None:
+                    movieRating = movieRating.getText()
+                    movieQuality = movieQuality.getText()
+                else:
+                    movieRating = 0
+                    movieQuality = 0
 
-            if quality and rating != None:
-                quality = quality.getText()
-                rating = rating.getText()
-            else:
-                quality = ''
-                rating = 0
-
-            result.append({'name': name, 'quality': quality,
-                          'image': image, 'rating': rating, 'category': category, 'link': link})
+                result.append(
+                    {"name": movieName, "link": movieRef, 'quality': movieQuality, 'image': movieImg, 'rating': movieRating})
 
         return result
 
-    # search details for movie, series
+    # search details for movie, series, anime
     @app.route('/search/details/<search>', methods=["GET", "POST"])
     def search_data(search):
-        result = {}
+        data = {}
+
+        searchUrl = "{}/explore/?q={}".format(BASEURL, search)
+        searchResponse = Egyflix.request(searchUrl)
+        searchSoup = BeautifulSoup(searchResponse.text, "html.parser")
+
+        movieResult = searchSoup.select_one(".movie")
+        movieAttr = movieResult.get("href", 0)
+
         if request.data:
             post = json.loads(request.data)
             if post['link'] != None:
-                link = post['link']
+                movieAttr = post['link']
+
+        searchResult = Egyflix.request(movieAttr)
+        movieSoup = BeautifulSoup(searchResult.text, "html.parser")
+
+        movieName = movieSoup.select_one(
+            ".movie_title").getText().split(' (')[0]
+        movie_quality = movieSoup.select_one('.ribbon').getText()
+        date = movieSoup.select_one('.movie_title h1 a').getText()
+        img = movieSoup.select_one('.movie_img > a > img').get('src')
+        rating = movieSoup.select_one(
+            '.rating').next_sibling.next_sibling.getText()
+        video = movieSoup.select_one('.play').get('url')
+        videoImg = movieSoup.select_one('img.video').get('src')
+        story = movieSoup.select('.pda')[3].getText(' / ')
+
+        if (searchResult.url.split("/")[3] == 'movie'):
+            genre = []
+            movieGenre = movieSoup.select_one('table.movieTable')
+            duration = movieGenre.select('tr')[5].select(
+                'td')[1].getText()
+
+            movieGenre = movieGenre.select('tr')[3].select(
+                'td')[1].select('a')
+            for mg in movieGenre:
+                genre.append({'name': mg.getText(), 'link': mg.get('href')})
+
+            data = {
+                'name': movieName,
+                'release_date': date,
+                'quality': movie_quality,
+                'image': img,
+                'genre': genre,
+                'duration': duration,
+                'rating': rating,
+                'link': movieAttr,
+                'video': video,
+                'videoImg': videoImg,
+                'story': story,
+                'type': searchResult.url.split("/")[3]
+            }
+
         else:
-            url = '{}/find/?find={}'.format(BASEURL, search)
-            soup = Egyflix.request(url)
+            genre = []
+            movieGenre = movieSoup.select_one('table.movieTable')
+            movieGenre = movieGenre.select('tr')[3].select(
+                'td')[1].select('a')
+            for mg in movieGenre:
+                genre.append(
+                    {'name': mg.getText(), 'link': mg.get('href')})
 
-            soup = BeautifulSoup(soup.text, 'html.parser')
-            soup = soup.select_one('.MovieBlock')
+            seasons = []
+            seasonsSoup = movieSoup.select('.movies_small')[0].select('.movie')
+            for s in seasonsSoup:
+                seasons.append({'link': s.get('href'), 'name': s.select_one(
+                    '.title').getText(), 'image': s.select_one('img').get('src'), 'season': int(s.get('href').split("/")[4].split('-')[4])})
+            totalSeasons = seasonsSoup[0].get(
+                'href').split("/")[4].split('-')[4]
 
-            link = soup.select_one('a').get('href')
+            data = {
+                'name': movieName,
+                'release_date': date,
+                'quality': movie_quality,
+                'image': img,
+                'rating': rating,
+                'link': movieAttr,
+                'video': video,
+                'videoImg': videoImg,
+                'story': story,
+                'genre': genre,
+                'seasons': seasons,
+                'total': totalSeasons,
+                'type': searchResult.url.split("/")[3]
+            }
 
-        detailsSoup = Egyflix.request(link)
-        detailsSoup = BeautifulSoup(detailsSoup.text, 'html.parser')
+        return data
 
-        result['name'] = detailsSoup.select_one(
-            '.Title').getText().split(' ', 1)[1]
-        result['category'] = detailsSoup.select_one(
-            '.category').getText()
-        result['image'] = detailsSoup.select_one('.Poster img').get('data-src')
-        result['watch'] = Egyflix.get_links(link + 'download')
-        result['story'] = detailsSoup.select(
-            '.StoryLine .descrip')[1].getText()
-
-        info = detailsSoup.select('.MetaTermsInfo li')
-        for i in info:
-            if i.select_one('a').get('href') == 'javascript:void(0)':
-                release_date = i.select_one('a').getText()
-                result['release_date'] = release_date
-            else:
-                result[i.select_one('a').get('href').split('/')[3]] = {
-                    'name': i.select_one('a').getText(),
-                    'link': i.select_one('a').get('href')
-                }
-                if i.select_one('a').get('href').split('/')[3] == 'genre':
-                    genre = []
-                    for gen in i.select('a'):
-                        genre.append(
-                            {'name': gen.getText(), 'link':  gen.get('href')})
-                    result['genre'] = genre
-
-        rating = detailsSoup.select_one('.RatingImdb em')
-        if rating != None:
-            result['rating'] = rating.getText()
-        else:
-            result['rating'] = 0
-
-        if len(detailsSoup.select('.SeasonsListHolder')) > 0:
-            result['seasons'] = Series.get_seasons(link)
-
-        return [result]
-
-    # get watch links for movie, series
+    # get watch, dowload links for movie, series, anime
     @app.route('/get/links', methods=["GET", "POST"])
-    def get_links(link=None):
+    def get_links():
+        baseURL = "http://www.egy.best"
         if request.data:
             post = json.loads(request.data)
             if post['link'] != None:
@@ -117,17 +151,33 @@ class Egyflix:
         soup = Egyflix.request(link)
         soup = BeautifulSoup(soup.text, 'html.parser')
 
-        result = []
-        block = soup.select('.DownloadBlock')
-        for b in block:
-            quality = b.select_one('h3 span').getText()
-            ref = b.select_one('a').get('href')
-            result.append({'quality': quality, 'link': ref})
+        watch = Download().getDownloadSources(link)
+        play = baseURL + soup.select_one(".auto-size").get("src")
 
-        return result
+        movieQualities = soup.select('.dls_table > tbody > tr')
+        for i, mq in enumerate(reversed(movieQualities)):
+            size = mq.select_one(
+                'td').nextSibling.nextSibling.nextSibling.getText()
+            quality = mq.select_one(
+                'td').nextSibling.nextSibling.getText()
+            quality = re.findall(r'\d+', quality)[0]
+
+            fileName = watch[i]['name']
+            name_idx = fileName.index("p.mp4")
+            fileLink = watch[i]['link']
+            link_idx = fileLink.index("p.mp4")
+
+            watch[i]['size'] = size
+            watch[i]['quality'] = int(quality)
+            watch[i]['link'] = fileLink[:link_idx] + \
+                quality + fileLink[link_idx:]
+            watch[i]['name'] = fileName[:name_idx] + \
+                quality + fileName[name_idx:]
+
+        return {'watch': watch, 'play': play}
 
     # request url using scraper api
-    def request(link, status='host'):
+    def request(link, status='local'):
         if status == 'host':
             payload = {
                 'api_key': 'fd37ca458851abfd1350b898184bce77', 'url': link}
@@ -135,43 +185,91 @@ class Egyflix:
                 'http://api.scraperapi.com', params=payload)
 
         if status == 'local':
-            response = requests.get(link)
+            response = requests.get(link, proxies=urllib.request.getproxies())
 
         return response
 
 
 class Download:
-    # get download links for movies, series
-    @app.route('/get/download', methods=["GET", "POST"])
-    def getDownloadSources(link=None):
-        if request.data:
-            post = json.loads(request.data)
-            if post['link'] != None:
-                link = post['link']
+    # get download links for movies, series, animes
+    def getDownloadSources(self, link):
+        data = []
+        baseLink = link.split("/")[0] + "//" + link.split("/")[2]
 
-        chrome_options = webdriver.ChromeOptions()
-        chrome_options.binary_location = os.environ.get("GOOGLE_CHROME_BIN")
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--no-sandbox")
-        driver = webdriver.Chrome(executable_path=os.environ.get(
-            "CHROMEDRIVER_PATH"), chrome_options=chrome_options)
-        driver.get(link)
+        try:
+            session = requests.Session()
 
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
+            page = requests.get(link).text
+            soup = BeautifulSoup(page, features="html.parser")
 
-        ref = soup.select_one('.plyr__video-wrapper video').get('src')
-        image = soup.select_one('.adm-image img').get('src')
-        name = soup.select_one('.fsh-header__left').getText()
-        result = [{'link': ref, 'image': image, 'name': name}]
+            vidstreamURL = baseLink + soup.select_one('.auto-size').get("src")
+            vidstreamResponseText = session.get(vidstreamURL).text
+            videoSoup = BeautifulSoup(
+                vidstreamResponseText, features="html.parser")
 
-        return result
+            try:
+                qualityLinksFileURL = baseLink + \
+                    videoSoup.select_one("source").get("src")
+
+            except AttributeError:
+                jsCode = str(videoSoup.find_all("script")[1])
+
+                verificationToken = str(re.findall(
+                    "\{'[0-9a-zA-Z_]*':'ok'\}", jsCode)[0][2:-7])
+                encodedAdLinkVar = re.findall(
+                    "\([0-9a-zA-Z_]{2,12}\[Math", jsCode)[0][1:-5]
+                firstEncodingArray = re.findall(
+                    ",[0-9a-zA-Z_]{2,12}=\[\]", jsCode)[1][1:-3]
+                secondEncodingArray = re.findall(
+                    ",[0-9a-zA-Z_]{2,12}=\[\]", jsCode)[2][1:-3]
+
+                jsCode = re.sub(
+                    "^<script type=\"text/javascript\">", "", jsCode)
+                jsCode = re.sub("[;,]\$\('\*'\)(.*)$", ";", jsCode)
+                jsCode = re.sub(
+                    ",ismob=(.*)\(navigator\[(.*)\]\)[,;]", ";", jsCode)
+                jsCode = re.sub("var a0b=function\(\)(.*)a0a\(\);", "", jsCode)
+                jsCode += "var link = ''; for (var i = 0; i <= " + secondEncodingArray + \
+                    "['length']; i++) { link += " + firstEncodingArray + "[" + secondEncodingArray + \
+                    "[i]] || ''; } return [link, " + \
+                    encodedAdLinkVar + "[0]] }"
+
+                jsCodeReturn = executeJS(jsCode)()
+                verificationPath = jsCodeReturn[0]
+                encodedAdPath = jsCodeReturn[1]
+
+                adLink = baseLink + "/" + \
+                    str(decode(encodedAdPath + "=" *
+                        (-len(encodedAdPath) % 4)), "utf-8")
+                session.get(adLink)
+                verificationLink = baseLink + "/tvc.php?verify=" + verificationPath
+                session.post(verificationLink, data={verificationToken: "ok"})
+
+                vidstreamResponseText = session.get(vidstreamURL).text
+                videoSoup = BeautifulSoup(
+                    vidstreamResponseText, features="html.parser")
+
+                qualityLinksFileURL = baseLink + \
+                    videoSoup.select_one("source").get("src")
+
+            qualityLinks = session.get(qualityLinksFileURL).text
+            qualityLinksArray = qualityLinks.split("\n")[1::]
+
+            for i in range(0, len(qualityLinksArray)-2, 2):
+                fileName = link.split(
+                    "/")[4] + "-" + "p.mp4"
+                mediaLink = requests.utils.quote(qualityLinksArray[i+1], safe=":/").replace(
+                    "_", "%5F").replace("/stream/", "/dl/").replace("/stream.m3u8", f"/{fileName}")
+                data.append(
+                    {'link': mediaLink, 'name': fileName})
+        finally:
+            return data
 
 
 class Series:
-    # get seasons of series
-    @app.route('/series/seasons', methods=["GET", "POST"])
-    def get_seasons(link=None):
+    # get episodes of series
+    @app.route('/series/episodes', methods=["GET", "POST"])
+    def get_episodes():
         if request.data:
             post = json.loads(request.data)
             if post['link'] != None:
@@ -179,89 +277,44 @@ class Series:
 
         soup = Egyflix.request(link)
         soup = BeautifulSoup(soup.text, 'html.parser')
-        result = []
 
-        if len(soup.select('.SeasonsListHolder')) > 0:
-            seasons = soup.select('.SeasonsListHolder ul li')
-            for s in seasons:
-                season = s.select_one('span').getText()
-                if season == '':
-                    continue
-                result.append({'season': season.split(" ")[1]})
-        return result
-
-    # get episodes of series
-    @app.route('/series/episodes', methods=["GET", "POST"])
-    def get_episodes(link=None, season=None):
-        if request.data:
-            post = json.loads(request.data)
-            if post['link'] and post['season'] != None:
-                link = post['link']
-                season = post['season']
-
-        soup = Egyflix.request(link)
-        soup = BeautifulSoup(soup.text, 'html.parser')
-        result = []
-
-        seasonLink = soup.select('.BreadCrumbs ol li a')[3].get('href')
-        seasonLink = unquote(seasonLink)
-        seasonLink = seasonLink[:-1] + '-الموسم-{}'.format(season)
-
-        episodes = soup.select('.ContainerEpisodesList a')
-        for ep in episodes:
-            epLink = ep.get('href')
-            epName = ep.select_one('em').getText()
-            result.append({'link': epLink, 'episode': epName})
-
-        return result
+        episodes = []
+        epSoup = soup.select('.movies_small')[0].select('.movie')
+        for s in epSoup:
+            episodes.append({'link': s.get('href'), 'name': s.select_one(
+                '.title').getText(), 'image': s.select_one('img').get('src'), 'episode': int(s.get('href').split('ep-')[1].split('/')[0])})
+        return episodes
 
 
 class Search:
-    # search for movie, series
-    @app.route('/search/<search>/page=<int:page>')
-    def search(search, page):
-        url = '{}/find/?find={}&offset={}'.format(BASEURL, search, page)
-        soup = Egyflix.request(url)
-        soup = BeautifulSoup(soup.text, 'html.parser')
-
+    # search for movie, series, anime
+    @app.route('/search/<search>')
+    def search(search):
         result = []
-        block = soup.select('.MovieBlock')
-        for s in block:
-            name = s.select_one('.BlockName h4').getText().split(
-                ' ', 1)[1]
-            category = s.select_one('.category').getText()
-            image = s.select_one('.Poster img').get('data-src')
-            link = s.select_one('a').get('href')
-            rating = s.select_one('.RateNumber')
-            quality = s.select_one('.Ribbon')
+        baseURL = "http://www.egy.best"
+        url = "{}/explore/?q={}".format(baseURL, search)
 
-            if quality and rating != None:
-                quality = quality.getText()
-                rating = rating.getText()
+        response = Egyflix.request(url)
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        movies = soup.select(".movie")
+        for movie in movies:
+            movieRef = movie.get("href", 0)
+            movieName = movie.select_one(".title").getText()
+            movieQuality = movie.select_one('.ribbon')
+            movieImg = movie.select_one('img').get('src')
+            movieRating = movie.select_one('.rating')
+            if movieRating and movieQuality != None:
+                movieRating = movieRating.getText()
+                movieQuality = movieQuality.getText()
             else:
-                quality = ''
-                rating = 0
+                movieRating = 0
+                movieQuality = 0
 
-            result.append({'name': name, 'quality': quality,
-                          'image': image, 'rating': rating, 'category': category, 'link': link})
-        searchRes = []
-        excludedCategory = ['اغاني اجنبي',
-                            'موبايلات', 'برامج كمبيوتر', 'اغاني عربي', 'العاب كمبيوتر']
-
-        pagesNum = len(soup.select('.page-numbers li')) + 1 - 2
-        if pagesNum > 0:
-            searchRes.append({"pages": pagesNum})
-        else:
-            searchRes.append({"pages": 1})
-
-        for item in result:
-            if item['category'] in excludedCategory:
-                continue
-            else:
-                searchRes.append(item)
-
-        return searchRes
+            result.append(
+                {"name": movieName, "link": movieRef, 'quality': movieQuality, 'image': movieImg, 'rating': movieRating})
+        return result
 
 
-if __name__ == "__main__":
-    app.run()
+if __name__ == '__main__':
+    app.run(host='0.0.0.0')
