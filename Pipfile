@@ -7,8 +7,8 @@ name = "pypi"
 beautifulsoup4 = "*"
 requests = "*"
 flask = "*"
-selenium = "*"
 gunicorn = "*"
+js2py = "*"
 
 [dev-packages]
 autopep8 = "*"
