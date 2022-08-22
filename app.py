@@ -23,10 +23,9 @@ class Egyflix:
 
         for n in range(pages):
             action = action.replace('-', '/')
-            url = "{}/{}?output_format=json".format(BASEURL, action)
+            url = "{}/{}/?page={}".format(BASEURL, action, n + 1)
             response = Egyflix.request(url)
-            response = json.loads(response.text)
-            soup = BeautifulSoup(response['html'], "html.parser")
+            soup = BeautifulSoup(response.text, "html.parser")
 
             movies = soup.select(".movie")
             for movie in movies:
@@ -177,7 +176,7 @@ class Egyflix:
         return {'watch': watch, 'play': play}
 
     # request url using scraper api
-    def request(link, status='local'):
+    def request(link, status='host'):
         if status == 'host':
             payload = {
                 'api_key': 'fd37ca458851abfd1350b898184bce77', 'url': link}
@@ -317,4 +316,4 @@ class Search:
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0')
+    app.run()
