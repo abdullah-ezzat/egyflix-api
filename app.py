@@ -12,41 +12,50 @@ BASEURL = "https://mycima.link/"
 
 @app.route('/')
 def index():
-    req = Egyflix.request(BASEURL)
-    print(req.text)
     return 'WELCOME TO EGYFLIX'
 
 
 class Egyflix:
-    #     # get movies, series, animes list
-    #     @app.route('/get/<action>/pages=<int:pages>')
-    #     def get_data(action, pages):
-    #         result = []
+    # get movies, series, animes list
+    @app.route('/get/<action>/<scope>/page=<int:page>')
+    def get_data(action, scope='main', page=1):
+        result = []
+        action = action.replace('-', '/')
+        action = action.replace('>', '-')
+        url = "{}/{}/page/{}/".format(BASEURL, action, page)
+        response = Egyflix.request(url)
+        soup = BeautifulSoup(response.text, "html.parser")
 
-    #         for n in range(pages):
-    #             action = action.replace('-', '/')
-    #             url = "{}/{}/?page={}".format(BASEURL, action, n + 1)
-    #             response = Egyflix.request(url)
-    #             soup = BeautifulSoup(response.text, "html.parser")
+        if scope == 'main':
+            movies = soup.select(".Grid--MycimaPosts > .GridItem")
+        if scope == 'top':
+            movies = soup.select(".GridItem")
 
-    #             movies = soup.select(".movie")
-    #             for movie in movies:
-    #                 movieRef = movie.get("href", 0)
-    #                 movieName = movie.select_one(".title").getText()
-    #                 movieQuality = movie.select_one('.ribbon')
-    #                 movieImg = movie.select_one('img').get('src')
-    #                 movieRating = movie.select_one('.rating')
-    #                 if movieRating and movieQuality != None:
-    #                     movieRating = movieRating.getText()
-    #                     movieQuality = movieQuality.getText()
-    #                 else:
-    #                     movieRating = 0
-    #                     movieQuality = 0
+        for movie in movies:
+            sub = movie.select_one("em.modablaj")
+            movieRef = movie.select_one('a').get("href", 0)
+            movieName = movie.select_one("strong.hasyear")
+            movieImg = movie.select_one(
+                '.BG--GridItem').get('data-lazy-style', 0)
+            movieDate = movie.select_one('strong.hasyear > .year')
 
-    #                 result.append(
-    #                     {"name": movieName, "link": movieRef, 'quality': movieQuality, 'image': movieImg, 'rating': movieRating})
+            if movieName != None:
+                movieName = movieName.next_element
+            else:
+                movieName = movie.select_one("strong").getText()
 
-    #         return result
+            if sub != None:
+                movieName = sub.next_sibling + sub.getText()
+
+            if movieDate != None:
+                movieDate = movieDate.getText().split('(')[1].split(')')[0]
+            else:
+                movieDate = 0
+
+            result.append(
+                {"title": movieName, "id": movieRef, 'poster_path': movieImg.split('(')[1].split(')')[0], 'release_date': movieDate})
+
+        return result
 
     #     # search details for movie, series, anime
     #     @app.route('/search/details/<search>', methods=["GET", "POST"])
