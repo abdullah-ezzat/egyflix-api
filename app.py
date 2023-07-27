@@ -1,10 +1,6 @@
-from base64 import urlsafe_b64decode as decode
-from js2py import eval_js as executeJS
 from bs4 import BeautifulSoup
-from flask import Flask, request
+from flask import Flask
 import requests
-import json
-import re
 
 app = Flask(__name__)
 BASEURL = "https://mycima.link/"
